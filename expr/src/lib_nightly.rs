@@ -4,7 +4,7 @@ use std::ops::{Coroutine, CoroutineState};
 use std::ptr::slice_from_raw_parts;
 use crate::{byte_item, item_byte, traverseh, Expr, ExprEnv, ExprVar, ExprZipper, Tag, APPLY_DEPTH, PRINT_DEBUG};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum SourceItem<'a> {
     Tag(Tag),
     Symbol(&'a[u8]),

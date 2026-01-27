@@ -32,8 +32,8 @@ pub static mut writes: usize = 0;
 pub static ACT_PATH: &'static str = "/dev/shm/";
 // pub static ACT_PATH: &'static str = "/mnt/data/";
 
-pub struct Space {
-    pub btm: PathMap<()>,
+pub struct Space<V: Clone + Default + Send + Sync + Unpin = ()> {
+    pub btm: PathMap<V>,
     pub sm: SharedMappingHandle,
     pub mmaps: HashMap<&'static str, ArenaCompactTree<memmap2::Mmap>>
 }
@@ -252,18 +252,18 @@ impl <'a> ParDataParser<'a> {
     }
 }
 
-pub struct SpaceTranscriber<'a, 'b, 'c> { count: usize, wz: &'c mut WriteZipperUntracked<'a, 'b, ()>, pdp: ParDataParser<'a> }
-impl <'a, 'b, 'c> SpaceTranscriber<'a, 'b, 'c> {
+pub struct SpaceTranscriber<'a, 'b, 'c, V: Clone + Default + Send + Sync + Unpin = ()> { count: usize, wz: &'c mut WriteZipperUntracked<'a, 'b, V>, pdp: ParDataParser<'a> }
+impl <'a, 'b, 'c, V: Clone + Default + Send + Sync + Unpin> SpaceTranscriber<'a, 'b, 'c, V> {
     #[inline(always)] fn write<S : AsRef<[u8]>>(&mut self, s: S) {
         let token = self.pdp.tokenizer(s.as_ref());
         let mut path = vec![item_byte(Tag::SymbolSize(token.len() as u8))];
         path.extend(token);
         self.wz.descend_to(&path[..]);
-        self.wz.set_val(());
+        self.wz.set_val(V::default());
         self.wz.ascend(path.len());
     }
 }
-impl <'a, 'b, 'c> mork_frontend::json_parser::Transcriber for SpaceTranscriber<'a, 'b, 'c> {
+impl <'a, 'b, 'c, V: Clone + Default + Send + Sync + Unpin> mork_frontend::json_parser::Transcriber for SpaceTranscriber<'a, 'b, 'c, V> {
     #[inline(always)] fn descend_index(&mut self, i: usize, first: bool) -> () {
         if first { self.wz.descend_to(&[item_byte(Tag::Arity(2))]); }
         let token = self.pdp.tokenizer(i.to_string().as_bytes());
@@ -431,7 +431,7 @@ macro_rules! sexpr {
     }};
 }
 
-impl Space {
+impl<V: Clone + Default + Send + Sync + Unpin> Space<V> {
     pub fn new() -> Self {
         Self { btm: PathMap::new(), sm: SharedMapping::new(), mmaps: HashMap::new() }
     }
@@ -533,7 +533,7 @@ impl Space {
             }
             let new_data = &buf[..oz.loc];
             wz.descend_to(&new_data[constant_template_prefix.len()..]);
-            wz.set_value(());
+            wz.set_value(V::default());
             wz.reset();
             i += 1;
         }
@@ -685,7 +685,7 @@ impl Space {
                 ez.loc += internal.len() + 1;
             }
             // println!("{}", serialize(ez.span()));
-            unsafe { self.btm.insert(ez.span(), ()); }
+            unsafe { self.btm.insert(ez.span(), V::default()); }
             count += 1;
             if count % 1000000 == 0 {
                 println!("{count} triples");
@@ -739,7 +739,7 @@ impl Space {
                         wz.descend_to_byte(item_byte(Tag::SymbolSize(internal_v.len() as _)));
                         wz.descend_to(internal_v);
 
-                        wz.set_value(());
+                        wz.set_value(V::default());
 
                         wz.ascend(internal_v.len() + 1);
                     }
@@ -748,7 +748,7 @@ impl Space {
                     wz.descend_to_byte(item_byte(Tag::SymbolSize(internal_v.len() as _)));
                     wz.descend_to(internal_v);
 
-                    wz.set_value(());
+                    wz.set_value(V::default());
 
                     wz.ascend(internal_v.len() + 1);
                 }
@@ -805,7 +805,7 @@ impl Space {
                 wz.descend_to_byte(item_byte(Tag::SymbolSize(internal_v.len() as _)));
                 wz.descend_to(internal_v);
 
-                wz.set_value(());
+                wz.set_value(V::default());
 
                 wz.ascend(internal_v.len() + 1);
 
@@ -834,7 +834,7 @@ impl Space {
             match parser.sexpr(&mut it, &mut ez) {
                 Ok(()) => {
                     let data = &stack[..ez.loc];
-                    if add { self.btm.insert(data, ()); }
+                    if add { self.btm.insert(data, V::default()); }
                     else { self.btm.remove(data); }
                 }
                 Err(ParserError::InputFinished) => { break }
@@ -870,7 +870,7 @@ impl Space {
                     }
                     let new_data = &buffer[..oz.loc];
                     wz.move_to_path(&new_data[constant_template_prefix.len()..]);
-                    if add { wz.set_val(()); }
+                    if add { wz.set_val(V::default()); }
                     else { wz.remove_val(true); }
                     wz.reset();
                 }
@@ -977,7 +977,7 @@ impl Space {
         let tree = pathmap::arena_compact::ArenaCompactTree::open_mmap(path)?;
         let mut rz = tree.read_zipper();
         while rz.to_next_val() {
-            self.btm.insert(rz.path(), ());
+            self.btm.insert(rz.path(), V::default());
         }
         Ok(())
     }
@@ -989,10 +989,10 @@ impl Space {
 
     pub fn restore_paths<OutDirPath : AsRef<std::path::Path>>(&mut self, path: OutDirPath) -> Result<pathmap::paths_serialization::DeserializationStats, std::io::Error> {
         let mut file = File::open(path).unwrap();
-        pathmap::paths_serialization::deserialize_paths(self.btm.write_zipper(), &mut file, ())
+        pathmap::paths_serialization::deserialize_paths(self.btm.write_zipper(), &mut file, V::default())
     }
 
-    pub fn query_multi<F : FnMut(Result<&[u32], BTreeMap<(u8, u8), ExprEnv>>, Expr) -> bool>(btm: &PathMap<()>, pat_expr: Expr, mut effect: F) -> usize {
+    pub fn query_multi<F : FnMut(Result<&[u32], BTreeMap<(u8, u8), ExprEnv>>, Expr) -> bool>(btm: &PathMap<V>, pat_expr: Expr, mut effect: F) -> usize {
         let pat_newvars = pat_expr.newvars();
         trace!(target: "query_multi", "pattern (newvars={}) {:?}", pat_newvars, serialize(unsafe { pat_expr.span().as_ref().unwrap() }));
         let mut pat_args = vec![];
@@ -1007,7 +1007,10 @@ impl Space {
 
         Self::query_multi_raw(&mut prz, &pat_args[1..], effect)
     }
+}
 
+// Functions that depend on sources.rs (which has hardcoded `()` value type)
+impl Space<()> {
     pub fn query_multi_i<F : FnMut(Result<&[u32], BTreeMap<(u8, u8), ExprEnv>>, Expr) -> bool>(no_source: bool, mut mmaps: &mut HashMap<&'static str, ArenaCompactTree<memmap2::Mmap>>, btm: &PathMap<()>, pat_expr: Expr, mut effect: F) -> usize {
         use crate::sources::{ASource, Resource, ResourceRequest, Source};
 
@@ -1048,11 +1051,14 @@ impl Space {
             primary => {
                 let mut prz = ProductZipperG::new(primary, &mut factors[..]);
                 prz.reserve_buffers(1 << 32, 32);
-                Self::query_multi_raw(&mut prz, &pat_args[1..], effect)
+                Space::<()>::query_multi_raw(&mut prz, &pat_args[1..], effect)
             }
         }
     }
+}
 
+// Reopen generic impl for functions that don't depend on sources/sinks
+impl<V: Clone + Default + Send + Sync + Unpin> Space<V> {
     #[cfg(feature="no_search")]
     #[inline(always)]
     pub fn query_multi_raw<PZ : ZipperProduct, F : FnMut(Result<&[u32], BTreeMap<(u8, u8), ExprEnv>>, Expr) -> bool>(mut prz: &mut PZ, sources: &[ExprEnv], mut effect: F) -> usize {
@@ -1226,7 +1232,7 @@ impl Space {
         let mut placements = subsumption.clone();
         let mut read_copy = self.btm.clone();
         let mut zh = self.btm.zipper_head();
-        read_copy.insert(unsafe { add.span().as_ref().unwrap() }, ());
+        read_copy.insert(unsafe { add.span().as_ref().unwrap() }, V::default());
         let mut template_wzs: Vec<_> = Vec::with_capacity(64);
         template_prefixes.iter().enumerate().for_each(|(i, x)| {
             if subsumption[i] == i {
@@ -1243,7 +1249,7 @@ impl Space {
 
         let mut assignments: Vec<(u8, u8)> = vec![];
         let mut trace: Vec<(u8, u8)> = vec![];
-        
+
         let mut ass = Vec::with_capacity(64);
         let mut astack = Vec::with_capacity(64);
 
@@ -1283,7 +1289,7 @@ impl Space {
 
                         trace!(target: "transform", "U {i} out {:?}", Expr{ ptr: buffer.as_mut_ptr() });
                         wz.move_to_path(&buffer[wz.root_prefix_path().len()..]);
-                        any_new |= wz.set_val(()).is_none();
+                        any_new |= wz.set_val(V::default()).is_none();
                     }
                     true
                 }
@@ -1294,7 +1300,10 @@ impl Space {
         }
         (touched, any_new)
     }
+}
 
+// Functions that depend on sources.rs/sinks.rs (which have hardcoded `()` value type)
+impl Space<()> {
     #[cfg(feature="specialize_io")]
     pub fn transform_multi_multi_i(&mut self, pat_expr: Expr, tpl_expr: Expr, add: Expr) -> (usize, bool) {
         let mut buffer = Vec::with_capacity(1 << 32);
@@ -1324,7 +1333,7 @@ impl Space {
 
         let mut assignments: Vec<(u8, u8)> = vec![];
         let mut trace: Vec<(u8, u8)> = vec![];
-        
+
         let mut ass = Vec::with_capacity(64);
         let mut astack = Vec::with_capacity(64);
 
@@ -1411,7 +1420,7 @@ impl Space {
 
         let mut assignments: Vec<(u8, u8)> = vec![];
         let mut trace: Vec<(u8, u8)> = vec![];
-        
+
         let mut ass = Vec::with_capacity(64);
         let mut astack = Vec::with_capacity(64);
 
@@ -1435,7 +1444,7 @@ impl Space {
                         assignments.clear();
                         r
                     };
-                
+
                     for (i, template) in templates.iter().enumerate() {
                         let wz = &mut template_wzs[subsumption[i]];
 
@@ -1615,7 +1624,10 @@ impl Space {
 
         done
     }
-    
+}
+
+// Reopen generic impl for remaining functions that don't depend on sources/sinks
+impl<V: Clone + Default + Send + Sync + Unpin> Space<V> {
     pub fn token_bfs(&self, token: &[u8], pattern: Expr) -> Vec<(Vec<u8>, Expr)> {
 
         // let mut stack = vec![0; 1];

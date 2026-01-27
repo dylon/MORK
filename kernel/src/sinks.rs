@@ -316,15 +316,15 @@ impl Sink for WASMSink {
 
         WASMSink { e, skip: 1 + 1+4 + program_e.span().len(), changed: false, module, store, instance }
     }
-    fn request(&self) -> impl Iterator<Item=&'static [u8]> {
+    fn request(&self) -> impl Iterator<Item=WriteResourceRequest> {
         // let p = &unsafe { self.e.prefix().unwrap_or_else(|x| { let s = self.e.span(); slice_from_raw_parts(self.e.ptr, s.len() - 1) }).as_ref().unwrap() }[self.skip..];
         // trace!(target: "sink", "wasm requesting {}", serialize(p));
         // std::iter::once(p)
         static empty: [u8; 0] = [];
-        std::iter::once(&empty[..])
+        std::iter::once(WriteResourceRequest::BTM(&empty[..]))
     }
-    fn sink<'w, 'a, 'k, It: Iterator<Item=&'w mut WriteZipperUntracked<'a, 'k, ()>>>(&mut self, mut it: It, path: &[u8]) where 'a : 'w, 'k : 'w {
-        let mut wz = it.next().unwrap();
+    fn sink<'w, 'a, 'k, It: Iterator<Item=WriteResource<'w, 'a, 'k>>>(&mut self, mut it: It, path: &[u8]) where 'a : 'w, 'k : 'w {
+        let WriteResource::BTM(wz) = it.next().unwrap() else { unreachable!() };
         let mpath = &path[self.skip+wz.root_prefix_path().len()..];
         trace!(target: "sink", "wasm at '{}' sinking raw '{}'", serialize(wz.root_prefix_path()), serialize(path));
         trace!(target: "sink", "wasm input '{}'", serialize(mpath));
@@ -345,7 +345,7 @@ impl Sink for WASMSink {
         }
 
     }
-    fn finalize<'w, 'a, 'k, It: Iterator<Item=&'w mut WriteZipperUntracked<'a, 'k, ()>>>(&mut self, mut it: It) -> bool where 'a : 'w, 'k : 'w  {
+    fn finalize<'w, 'a, 'k, It: Iterator<Item=WriteResource<'w, 'a, 'k>>>(&mut self, mut it: It) -> bool where 'a : 'w, 'k : 'w  {
         trace!(target: "sink", "wasm finalizing");
         self.changed
     }
@@ -387,7 +387,7 @@ impl Sink for CountSink {
         let prz_ptr = (&prz) as *const OneFactor<_>;
         let mut changed = false;
         let mut buffer: Vec<u8> = Vec::with_capacity(1 << 32);
-        crate::space::Space::query_multi_raw(unsafe { prz_ptr.cast_mut().as_mut().unwrap() }, &[ExprEnv::new(0, Expr{ ptr: v.as_ptr().cast_mut() })], |refs_bindings, loc| {
+        crate::space::Space::<()>::query_multi_raw(unsafe { prz_ptr.cast_mut().as_mut().unwrap() }, &[ExprEnv::new(0, Expr{ ptr: v.as_ptr().cast_mut() })], |refs_bindings, loc| {
             let cnt = prz.val_count();
             trace!(target: "sink", "'{}' and under {}", serialize(prz.path()), cnt);
             let clen = prz.path().len();
@@ -466,7 +466,7 @@ impl Sink for HashSink {
         let prz_ptr = (&prz) as *const OneFactor<_>;
         let mut changed = false;
         let mut buffer: Vec<u8> = Vec::with_capacity(1 << 32);
-        crate::space::Space::query_multi_raw(unsafe { prz_ptr.cast_mut().as_mut().unwrap() }, &[ExprEnv::new(0, Expr{ ptr: v.as_ptr().cast_mut() })], |refs_bindings, loc| {
+        crate::space::Space::<()>::query_multi_raw(unsafe { prz_ptr.cast_mut().as_mut().unwrap() }, &[ExprEnv::new(0, Expr{ ptr: v.as_ptr().cast_mut() })], |refs_bindings, loc| {
             for b in prz.child_mask().and(&ByteMask(crate::space::SIZES)).iter() {
                 let Tag::SymbolSize(size) = byte_item(b) else { unreachable!() };
                 // if size != 16 { trace!(target: "sink", "hash guard not 16 bytes {size}"); continue }
@@ -563,7 +563,7 @@ impl Sink for AndSink {
         let prz_ptr = (&prz) as *const OneFactor<_>;
         let mut changed = false;
         let mut buffer: Vec<u8> = Vec::with_capacity(1 << 32);
-        crate::space::Space::query_multi_raw(unsafe { prz_ptr.cast_mut().as_mut().unwrap() }, &[ExprEnv::new(0, Expr{ ptr: v.as_ptr().cast_mut() })], |refs_bindings, loc| {
+        crate::space::Space::<()>::query_multi_raw(unsafe { prz_ptr.cast_mut().as_mut().unwrap() }, &[ExprEnv::new(0, Expr{ ptr: v.as_ptr().cast_mut() })], |refs_bindings, loc| {
 
             for b in prz.child_mask().and(&ByteMask(crate::space::SIZES)).iter() {
                 let Tag::SymbolSize(size) = byte_item(b) else { unreachable!() };
@@ -673,7 +673,7 @@ impl Sink for SumSink {
         let prz_ptr = (&prz) as *const OneFactor<_>;
         let mut changed = false;
         let mut buffer: Vec<u8> = Vec::with_capacity(1 << 32);
-        crate::space::Space::query_multi_raw(unsafe { prz_ptr.cast_mut().as_mut().unwrap() }, &[ExprEnv::new(0, Expr{ ptr: v.as_ptr().cast_mut() })], |refs_bindings, loc| {
+        crate::space::Space::<()>::query_multi_raw(unsafe { prz_ptr.cast_mut().as_mut().unwrap() }, &[ExprEnv::new(0, Expr{ ptr: v.as_ptr().cast_mut() })], |refs_bindings, loc| {
 
             for b in prz.child_mask().and(&ByteMask(crate::space::SIZES)).iter() {
                 let Tag::SymbolSize(size) = byte_item(b) else { unreachable!() };
@@ -787,7 +787,7 @@ impl Sink for PureSink {
         let prz_ptr = (&prz) as *const OneFactor<_>;
         let mut changed = false;
         let mut buffer: Vec<u8> = Vec::with_capacity(1 << 32);
-        crate::space::Space::query_multi_raw(unsafe { prz_ptr.cast_mut().as_mut().unwrap() }, &[ExprEnv::new(0, Expr{ ptr: v.as_ptr().cast_mut() })], |refs_bindings, loc| {
+        crate::space::Space::<()>::query_multi_raw(unsafe { prz_ptr.cast_mut().as_mut().unwrap() }, &[ExprEnv::new(0, Expr{ ptr: v.as_ptr().cast_mut() })], |refs_bindings, loc| {
 
             for b in prz.child_mask().and(&ByteMask(crate::space::SIZES)).iter() {
                 let Tag::SymbolSize(size) = byte_item(b) else { unreachable!() };
