@@ -9,7 +9,10 @@ impl<'a> core::ops::Drop for WritePermit<'a> {
     LIVE_PERMIT_HANDLES.set(permits);
 
     if permits == 0 {
-      self.permissions[MAPPING_THREAD_INDEX.get().unwrap() as usize].0.thread_id.store(0, atomic::Ordering::Release);
+      let index = MAPPING_THREAD_INDEX.get().unwrap();
+      self.permissions[index as usize].0.thread_id.store(0, atomic::Ordering::Release);
+      // Clear the cached index to prevent stale reuse race condition
+      MAPPING_THREAD_INDEX.set(None);
     }
   }
 }
@@ -131,18 +134,26 @@ impl SharedMappingHandle {
 
 
   /// Falure of this method marks a that all permissions were tried and it failed to aquire any.
-  /// Failure can be spurious if there are a high number of threads (> [`MAX_THREADS`]), it is recommended to 
+  /// Failure can be spurious if there are a high number of threads (> [`MAX_THREADS`]), it is recommended to
   /// retry even if there are many threads as this only competes with writer threads.
   pub fn try_aquire_permission<'a>(&'a self)->Result<WritePermit<'a>, ()> {
-    // A thred can only have one permission at a time
-    if let Some(_) = MAPPING_THREAD_INDEX.get() {
-      LIVE_PERMIT_HANDLES.set(LIVE_PERMIT_HANDLES.get() + 1);
-      return Ok(WritePermit(self, PhantomData));
+    let my_thread_id = THREAD_ID.with(|x|*x)+1;
+
+    // Check if we have a cached index and still own that slot
+    if let Some(cached_index) = MAPPING_THREAD_INDEX.get() {
+      let p = &self.permissions[cached_index as usize];
+      // Verify we still own this slot (thread_id matches our ID)
+      if p.0.thread_id.load(atomic::Ordering::Acquire) == my_thread_id {
+        LIVE_PERMIT_HANDLES.set(LIVE_PERMIT_HANDLES.get() + 1);
+        return Ok(WritePermit(self, PhantomData));
+      }
+      // Slot was released and possibly claimed by another thread - clear stale cache
+      MAPPING_THREAD_INDEX.set(None);
     }
 
     for each in 0..MAX_WRITER_THREADS {
       let p = &self.permissions[each];
-      if let Ok(_) = p.0.thread_id.compare_exchange(0, THREAD_ID.with(|x|*x)+1, atomic::Ordering::Acquire, atomic::Ordering::Relaxed) {
+      if let Ok(_) = p.0.thread_id.compare_exchange(0, my_thread_id, atomic::Ordering::Acquire, atomic::Ordering::Relaxed) {
         MAPPING_THREAD_INDEX.set(Some(each as u8));
         LIVE_PERMIT_HANDLES.set(LIVE_PERMIT_HANDLES.get() + 1);
         return Ok(WritePermit(self, PhantomData));

@@ -742,8 +742,10 @@ impl Expr {
                     }
                 }
                 (Tag::VarRef(i), Tag::Arity(s)) => {
-                    println!("{:?} as template for {:?}", self, iz.root);
-                    println!("checking _{} against [{}]", i+1, s);
+                    if PRINT_DEBUG {
+                        println!("{:?} as template for {:?}", self, iz.root);
+                        println!("checking _{} against [{}]", i+1, s);
+                    }
                     if let Tag::Arity(s_) = unsafe { byte_item(*bindings[i as usize].ptr) } {
                         if s != s_ { return Err(RefExprEarlyMismatch(i, s, s_)) }
                         // TODO this is quite wasteful: neither span should be re-calculated
