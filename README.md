@@ -12,3 +12,14 @@ By rearchitecting certain Hyperon bottlenecks, MORK has the potential to acceler
 You either want to dive deep into the asymptotics of graph transformations or unification and contact Adam, or you want to use the [server branch](https://github.com/trueagi-io/MORK/tree/server).
 
 If you're looking for the MORK command line utility, run `cargo build --release` in `/kernel`; you'll need a nightly compiler `rustup toolchain install nightly`.
+
+## Developing with a local PathMap checkout
+
+The workspace uses a pinned revision of the [PathMap development fork](https://github.com/dylon/PathMap) by default, so a standalone MORK clone needs no sibling repository. If you are changing both projects, put them in sibling directories and create an untracked `.cargo/config.toml` in the MORK root:
+
+```toml
+[patch."https://github.com/dylon/PathMap.git"]
+pathmap = { path = "../../PathMap" }
+```
+
+Run `cargo update -p pathmap` after adding or removing the override. The local config file is ignored by Git; do not commit a path override to `Cargo.toml`.
