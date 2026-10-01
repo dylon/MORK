@@ -28,7 +28,7 @@ use eval_ffi::ExprSource;
 use crate::pure;
 use crate::space::ACT_PATH;
 
-pub(crate) enum WriteResourceRequest {
+pub enum WriteResourceRequest {
     BTM(&'static [u8]),
     ACT(&'static str)
 }
