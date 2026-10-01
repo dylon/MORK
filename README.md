@@ -13,6 +13,12 @@ You either want to dive deep into the asymptotics of graph transformations or un
 
 If you're looking for the MORK command line utility, run `cargo build --release` in `/kernel`; you'll need a nightly compiler `rustup toolchain install nightly`.
 
+## Portable expression hashing
+
+The mork-expr crate uses its portable fallback hasher by default. Its gxhash
+feature is an explicit opt-in for builds on CPUs with the features required
+by GxHash. The source selects the implementation with the Cargo feature.
+
 ## Developing with a local PathMap checkout
 
 The workspace uses a pinned revision of the [PathMap development fork](https://github.com/dylon/PathMap) by default, so a standalone MORK clone needs no sibling repository. If you are changing both projects, put them in sibling directories and create an untracked `.cargo/config.toml` in the MORK root:

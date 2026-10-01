@@ -25,7 +25,6 @@ mork-frontend = {path = "./frontend"}
 mork = {path = "./kernel"}
 
 # External to MORK
-gxhash = {version="3.4.1", git="https://github.com/luketpeterson/gxhash/"} # for dag_serialization
 log = { version = "0.4.27" }
 env_logger = "0.11.8"
 pathmap = { git = "https://github.com/dylon/PathMap.git", rev = "0a33d2f008785d2d6640398a6a3d5df74eb42500", version = "0.3.0", features = ["jemalloc", "arena_compact", "nightly"] }

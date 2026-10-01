@@ -20,8 +20,10 @@ use smallvec::SmallVec;
 
 pub mod macros;
 
-#[cfg(gxhash)]
+#[cfg(feature = "gxhash")]
 use gxhash;
+#[cfg(feature = "gxhash")]
+use gxhash::HashSetExt;
 
 #[cfg(feature="nightly")]
 #[path="lib_nightly.rs"]
@@ -29,7 +31,7 @@ mod lib_nightly;
 #[cfg(feature="nightly")]
 pub use lib_nightly::*;
 
-#[cfg(not(gxhash))]
+#[cfg(not(feature = "gxhash"))]
 mod gxhash {
     // fallback
     // pub use xxhash_rust::xxh64::{Xxh64 as GxHasher};
