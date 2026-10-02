@@ -34,6 +34,8 @@ use symbol_backing::*;
 pub use symbol_backing::ThinBytes;
 
 mod serialization;
+mod checked_serialization;
+pub use checked_serialization::SharedMappingReadLimits;
 
 #[cfg(feature = "debug_api")]
 pub use serialization::Tables;
@@ -85,7 +87,9 @@ impl SharedMapping {
   /// This function will allocate a new SharedMapping returning back a reference counted handle
   pub fn new()->SharedMappingHandle {
     unsafe {
-      let ptr = alloc::alloc::alloc(alloc::alloc::Layout::new::<MaybeUninit<SharedMapping>>()) as *mut MaybeUninit<SharedMapping>;
+      let layout = alloc::alloc::Layout::new::<MaybeUninit<SharedMapping>>();
+      let ptr = alloc::alloc::alloc(layout) as *mut MaybeUninit<SharedMapping>;
+      if ptr.is_null() { alloc::alloc::handle_alloc_error(layout); }
       SharedMapping::init(ptr, SharedMappingFlags::HeapAllocated as u64)
     }
   }
@@ -113,7 +117,7 @@ impl SharedMapping {
 
   /// Aquire the bytes associated with a [`Symbol`]
   pub fn get_bytes(&self, sym: Symbol)-> Option<&[u8]> {
-    if sym[SYMBOL_THREAD_PERMIT_BYTE_POS] > i8::MIN as u8 {
+    if sym[SYMBOL_THREAD_PERMIT_BYTE_POS] >= MAX_WRITER_THREADS as u8 {
       return None;
     }
     let bucket = sym[SYMBOL_THREAD_PERMIT_BYTE_POS];

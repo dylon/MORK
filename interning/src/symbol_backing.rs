@@ -11,10 +11,13 @@ pub(crate) struct Slab {
 
 impl Slab {
   pub(crate) unsafe fn allocate(bytes : u64)-> *mut Slab {
-    let slab_size = (bytes as usize + core::mem::size_of::<Slab>()).max(4096);
+    let bytes = usize::try_from(bytes).expect("Slab byte count exceeds usize");
+    let slab_size = bytes.checked_add(core::mem::size_of::<Slab>())
+      .expect("Slab allocation size overflow").max(4096);
     let layout = alloc::alloc::Layout::array::<core::cell::UnsafeCell<u8>>(slab_size).unwrap().align_to(4096).expect("Cannot be aligned");
     // for serialization we want the tail to be zeroed so that it compresses well
     let allocation = unsafe { alloc::alloc::alloc_zeroed(layout) };
+    if allocation.is_null() { alloc::alloc::handle_alloc_error(layout); }
 
     let out = allocation as *mut Slab;
     unsafe{ *out = Slab {
