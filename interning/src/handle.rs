@@ -39,6 +39,13 @@ impl<'a> WritePermit<'a> {
     }
     let index = MAPPING_THREAD_INDEX.get().unwrap();
     let thread_permission = &self.permissions[index as usize].0;
+    // Each writer owns a distinct 40-bit counter range. A checked legacy
+    // image can restore a counter near the end of that range; fail before
+    // changing slabs or maps rather than minting an ID in another lane.
+    const SYMBOL_COUNTER_MASK: u64 = (1u64 << 40) - 1;
+    let next_symbol = thread_permission.next_symbol.load(LOAD_ORDER);
+    assert_eq!(next_symbol >> 40, u64::from(index), "SharedMapping writer symbol ID crossed its lane");
+    assert_ne!(next_symbol & SYMBOL_COUNTER_MASK, SYMBOL_COUNTER_MASK, "SharedMapping writer symbol ID lane exhausted");
 
     // On the happy path we want to make the critical section as small as possible.
     // So we eagerly write to the Slab if the currently allocated one has space.

@@ -224,8 +224,8 @@ impl SharedMapping {
         let stored_symbol = data.get(cursor..symbol_end).ok_or_else(|| invalid("truncated SharedMapping symbol ID"))?;
         let mut symbol = [0u8; 8];
         symbol[2..].copy_from_slice(stored_symbol);
-        if symbol[2] as usize != lane_index || symbol == [0; 8] || !seen_symbols.insert(symbol) {
-          return Err(invalid("wrong-lane, zero, or duplicate SharedMapping symbol ID"));
+        if symbol[2] as usize != lane_index || symbol == [0; 8] || symbol[3..].iter().all(|byte| *byte == 0xff) || !seen_symbols.insert(symbol) {
+          return Err(invalid("wrong-lane, zero, exhausted, or duplicate SharedMapping symbol ID"));
         }
         let tag_at = symbol_end;
         let tag = *data.get(tag_at).ok_or_else(|| invalid("truncated SharedMapping length tag"))?;
@@ -415,6 +415,11 @@ mod tests {
     let wrong_lane = record(1, 1, b"alpha");
     rejects(&[("SharedMapping_0x00.binary_data", wrong_lane.clone()), (META_NAME, meta(0, wrong_lane.len()))]);
 
+    // A decoded maximum suffix would make the next insert borrow into the
+    // following lane's ID range, even though the archive itself is bounded.
+    let exhausted_id = vec![0, 0xff, 0xff, 0xff, 0xff, 0xff, !5, b'a', b'l', b'p', b'h', b'a'];
+    rejects(&[("SharedMapping_0x00.binary_data", exhausted_id.clone()), (META_NAME, meta(0, exhausted_id.len()))]);
+
     let mut duplicate_ids = record(0, 1, b"alpha");
     duplicate_ids.extend(record(0, 1, b"beta"));
     rejects(&[("SharedMapping_0x00.binary_data", duplicate_ids.clone()), (META_NAME, meta(0, duplicate_ids.len()))]);
@@ -424,6 +429,18 @@ mod tests {
     let mut metadata = meta(0, first.len());
     metadata.extend(meta(1, second.len()));
     rejects(&[("SharedMapping_0x00.binary_data", first), ("SharedMapping_0x01.binary_data", second), (META_NAME, metadata)]);
+  }
+
+  #[test]
+  fn writer_refuses_to_cross_a_restored_symbol_lane() {
+    let mapping = SharedMapping::new();
+    mapping.permissions[0].0.next_symbol.store((1u64 << 40) - 2, Ordering::Relaxed);
+    let permit = mapping.try_aquire_permission().expect("single writer permit");
+    let last_safe = permit.get_sym_or_insert(b"last safe symbol");
+    assert_eq!(u64::from_be_bytes(last_safe), (1u64 << 40) - 2);
+    let blocked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| permit.get_sym_or_insert(b"blocked symbol")));
+    assert!(blocked.is_err());
+    assert_eq!(permit.get_sym(b"blocked symbol"), None);
   }
 
   #[test]
